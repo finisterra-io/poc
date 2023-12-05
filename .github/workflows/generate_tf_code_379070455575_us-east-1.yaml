@@ -1,0 +1,174 @@
+name: Generate TF 379070455575 us-east-1
+permissions:
+  id-token: write
+  contents: write
+  checks: write
+  security-events: write
+  actions: write
+  pull-requests: write
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/generate_tf_code_379070455575_us-east-1.yaml
+  workflow_dispatch:
+
+env:
+  FT_BASE_URL: https://app.finisterra.io
+  AWS_ACCOUNT_ID: 379070455575
+  AWS_REGION: us-east-1
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  setup:
+    if: (github.event_name != 'pull_request') || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'finisterra-initial-setup-379070455575-us-east-1'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Get services
+        id: get-services
+        run: |
+          result=$(curl -X GET \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.FT_API_KEY }}" \
+            --max-time 300 \
+            "${{ env.FT_BASE_URL }}/api/workspace/workspace?awsAccountId=${{ env.AWS_ACCOUNT_ID }}&awsRegion=${{ env.AWS_REGION }}")
+          services=$(echo "$result" | jq -c '.workspaces')
+          echo "services=$services" >> $GITHUB_OUTPUT
+
+    outputs:
+      services: ${{ steps.get-services.outputs.services }}
+
+  generate_tf_code:
+    needs: [setup]
+    if: needs.setup.outputs.services != '[]'
+    name: ${{ matrix.service.service_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{fromJson(needs.setup.outputs.services)}}
+    env:
+      TERRAFORM_VERSION: "1.5.0"
+      TERRAGRUNT_VERSION: "0.50.4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Extract AWS Information from Folder
+        id: extract-info
+        run: |
+          AWS_ACCOUNT_ID="${{ matrix.service.aws_account_id }}"
+          AWS_REGION="${{ matrix.service.aws_region }}"
+          AWS_MODULE="${{ matrix.service.service_name }}"
+          if [[ "$AWS_REGION" == "global" ]]; then
+            AWS_REGION="us-east-1"
+          fi
+          echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+          echo "AWS_REGION=$AWS_REGION" >> $GITHUB_ENV
+          echo "AWS_ROLE=arn:aws:iam::$AWS_ACCOUNT_ID:role/gha-cicd" >> $GITHUB_ENV
+          echo "AWS_MODULE=$AWS_MODULE" >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-duration-seconds: 3600
+
+      - name: Generate TF files for ${{ matrix.service.service_name }}
+        run: |
+          MAX_RETRIES=5
+          RETRY_DELAY=10  # initial delay in seconds
+          retry_count=0
+
+          while [[ $retry_count -lt $MAX_RETRIES ]]; do
+            docker pull public.ecr.aws/u5n7c4j1/ft-terraformer:latest && break
+            retry_count=$((retry_count + 1))
+            
+            # If we've reached the max number of retries, exit with an error
+            if [[ $retry_count -eq $MAX_RETRIES ]]; then
+              echo "Max retries reached. Exiting."
+              exit 1
+            fi
+
+            echo "Failed to pull image. Retrying in $RETRY_DELAY seconds..."
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY * 2))  # double the delay for the next iteration
+          done
+
+          docker run -v /tmp/generated:/app/generated -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN -e AWS_REGION=$AWS_REGION public.ecr.aws/u5n7c4j1/ft-terraformer:latest main.py ${{ env.AWS_ACCOUNT_ID }} ${{ env.AWS_REGION }} ${{ env.AWS_MODULE }}
+
+      - name: Set Git User who triggered the workflow
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Create PR for ${{ matrix.service.service_name }}
+        run: |
+          FOLDERS=$(find /tmp/generated/ -maxdepth 1 -mindepth 1 -type d -not -name ".*")
+          if [[ -z "$FOLDERS" ]]; then
+              echo "No resources found for ${AWS_MODULE}"
+              exit 0
+          fi
+
+          for DIR in $FOLDERS; do
+              FOLDER_NAME=$(basename "$DIR")
+
+              BRANCH="${FOLDER_NAME}-${{ env.AWS_ACCOUNT_ID }}-${{ env.AWS_REGION }}"
+
+              # Fetch remote branches
+              git fetch origin > /dev/null 2>&1
+
+              # Check if the branch exists remotely
+              EXISTS=$(git ls-remote --heads origin ${BRANCH} | wc -l)
+
+              if [ "$EXISTS" -eq "1" ]; then
+                # Get PRs associated with the branch
+                PR_STATE=$(curl -s \
+                  -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  --max-time 300 \
+                  "https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH}" \
+                  | jq -r '.[0].state')
+
+                if [ "$PR_STATE" == "open" ]; then
+                  git checkout ${BRANCH}
+                  git pull origin ${BRANCH}
+                else
+                  git push origin --delete ${BRANCH}
+                  git checkout -b ${BRANCH}
+                fi
+              else
+                git checkout -b ${BRANCH}
+              fi
+
+              #rm -rf "${{ matrix.service.folder }}/*"
+              mkdir -p "${{ matrix.service.root_folder }}"
+              cp -a "${DIR}" "${{ matrix.service.root_folder }}"
+              cp "/tmp/generated/terragrunt.hcl" "${{ matrix.service.root_folder }}"
+
+              if [ -n "$(git status --porcelain)" ]; then
+                # Changes detected
+                git add --all
+                git commit -m "Automatic scan for ${BRANCH}"
+                git push origin ${BRANCH}
+
+                # Create a PR
+                PR_BODY="Automated code generated\n\nFOLDER: ${FOLDER_NAME}\n\nAWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}\n\nAWS_REGION: ${{ env.AWS_REGION }}\n\n[skip cicd]"
+                curl -X POST \
+                  -H "Content-Type: application/json" \
+                  -H "Authorization: Bearer ${{ secrets.FT_API_KEY }}" \
+                  -d '{"repositoryName": "${{ github.repository }}", "branchName": "'"${BRANCH}"'", "owner": "${{ github.repository_owner }}", "pr_body": "'"${PR_BODY}"'"}' \
+                  --max-time 300 \
+                  ${{ env.FT_BASE_URL }}/api/github/pr
+              else
+                echo "No changes detected in ${FOLDER_NAME}. Skipping commit and push."
+              fi
+          done
