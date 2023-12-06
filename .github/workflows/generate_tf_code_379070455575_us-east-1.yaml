@@ -162,7 +162,7 @@ jobs:
                 git checkout -b ${BRANCH}
               fi
 
-              rm -rf ${{ matrix.service.folder }} || true
+              find ${{ matrix.service.folder }} -mindepth 1 -not -name 'terragrunt.hcl' -exec rm -rf {} +
               mkdir -p "${{ matrix.service.root_folder }}"
               cp -a "${DIR}" "${{ matrix.service.root_folder }}" || true
               cp "/tmp/generated/terragrunt.hcl" "${{ matrix.service.root_folder }}"
