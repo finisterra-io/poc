@@ -6,6 +6,9 @@ module "aws_s3_bucket-finisterra-aws-connect_a6570aa3d7" {
   source               = "github.com/finisterra-io/terraform-aws-s3-bucket.git?ref=main"
   attach_public_policy = true
   bucket               = local.bucket_a6570aa3d7
+  tags = {
+    "ftstack" : "stack1"
+  }
   versioning = {
     "status" : "Enabled"
   }
