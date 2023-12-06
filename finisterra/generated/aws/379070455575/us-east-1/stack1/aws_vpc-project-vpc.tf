@@ -9,7 +9,8 @@ module "aws_vpc-project-vpc" {
   cidr                                 = "10.0.0.0/16"
   enable_network_address_usage_metrics = false
   tags = {
-    "Name" : local.name_f7ddf37019
+    "Name" : local.name_f7ddf37019,
+    "ftstack" : "stack1"
   }
   manage_default_route_table = true
   manage_default_network_acl = true
