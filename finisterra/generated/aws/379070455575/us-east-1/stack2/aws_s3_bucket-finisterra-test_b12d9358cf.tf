@@ -1,13 +1,13 @@
 locals {
-  bucket_a6570aa3d7 = "finisterra-aws-connect"
+  bucket_b12d9358cf = "finisterra-test"
 }
 
-module "aws_s3_bucket-finisterra-aws-connect_a6570aa3d7" {
+module "aws_s3_bucket-finisterra-test_b12d9358cf" {
   source               = "github.com/finisterra-io/terraform-aws-s3-bucket.git?ref=main"
   attach_public_policy = true
-  bucket               = local.bucket_a6570aa3d7
-  versioning = {
-    "status" : "Enabled"
+  bucket               = local.bucket_b12d9358cf
+  tags = {
+    "ftstack" : "stack2"
   }
   server_side_encryption_configuration = {
     "rule" : {
@@ -19,10 +19,6 @@ module "aws_s3_bucket-finisterra-aws-connect_a6570aa3d7" {
     }
   }
   request_payer            = "BucketOwner"
-  block_public_acls        = false
-  block_public_policy      = false
-  ignore_public_acls       = false
-  restrict_public_buckets  = false
   control_object_ownership = true
-  object_ownership         = "BucketOwnerPreferred"
+  object_ownership         = "BucketOwnerEnforced"
 }
