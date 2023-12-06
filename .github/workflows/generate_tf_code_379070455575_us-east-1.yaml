@@ -308,7 +308,7 @@ jobs:
                 fi
 
                 #Clena existing code
-                rm ${STACK_FOLDER}
+                rm -rf ${STACK_FOLDER}
 
                 if [ -n "$(git status --porcelain)" ]; then
                   echo "Changes detected"
