@@ -114,9 +114,15 @@ jobs:
         id: create_pr
         run: |
           FOLDERS=$(find /tmp/generated/ -maxdepth 1 -mindepth 1 -type d -not -name ".*")
+          SERVICE_FOLDER="/tmp/generated/${{ matrix.service.service_name }}"
           if [[ -z "$FOLDERS" ]]; then
               echo "No resources found for ${AWS_MODULE}"
               exit 0
+          fi
+
+          # Check if SERVICE_FOLDER is not in FOLDERS and add if it's missing
+          if ! echo "$FOLDERS" | grep -w -q "^${SERVICE_FOLDER}$"; then
+              FOLDERS="$FOLDERS $SERVICE_FOLDER"
           fi
 
           STACK_LIST=""
@@ -158,7 +164,7 @@ jobs:
 
               rm -rf "${{ matrix.service.folder }}/*"
               mkdir -p "${{ matrix.service.root_folder }}"
-              cp -a "${DIR}" "${{ matrix.service.root_folder }}"
+              cp -a "${DIR}" "${{ matrix.service.root_folder }}" || true
               cp "/tmp/generated/terragrunt.hcl" "${{ matrix.service.root_folder }}"
 
               if [ -n "$(git status --porcelain)" ]; then
