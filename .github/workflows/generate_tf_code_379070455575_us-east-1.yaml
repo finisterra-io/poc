@@ -308,7 +308,7 @@ jobs:
                 fi
 
                 #Clena existing code
-                rm -rf ${STACK_FOLDER}
+                rm -rf ${STACK_FOLDER} || true
 
                 if [ -n "$(git status --porcelain)" ]; then
                   echo "Changes detected"
@@ -323,7 +323,7 @@ jobs:
 
             echo "Merging branch $BRANCH into $NEW_BRANCH_NAME"
             git fetch origin $BRANCH
-            git merge origin/$BRANCH -m "Merging branch $BRANCH into $NEW_BRANCH_NAME"
+            git merge --no-ff --allow-unrelated-histories origin/$BRANCH -m "Merging branch $BRANCH into $NEW_BRANCH_NAME"
           done
 
           git push origin ${NEW_BRANCH_NAME}
