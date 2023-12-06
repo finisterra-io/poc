@@ -307,6 +307,9 @@ jobs:
                     git checkout -b ${NEW_BRANCH_NAME}
                 fi
 
+                #Clena existing code
+                rm ${STACK_FOLDER}
+
                 if [ -n "$(git status --porcelain)" ]; then
                   echo "Changes detected"
                   git add --all
